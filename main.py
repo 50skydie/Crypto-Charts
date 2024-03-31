@@ -2,13 +2,7 @@ import requests
 import pandas as pd 
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
-from tkinter import *
-from tkinter import ttk
 from datetime import datetime
-from sklearn.metrics import mean_squared_error
-import seaborn as sns
-import xgboost as xgb
 from prophet import Prophet
 
 
@@ -64,47 +58,35 @@ def plot_btc_candle(stock_prices):
     plt.title(f"USD/BTC daily chart from {return_start_end_date(btc_price_history)[0]} to {return_start_end_date(btc_price_history)[1]}")
     plt.show()
 
-    # canvas = FigureCanvasTkAgg(fig,master = window)
-    # canvas.draw()
-    # canvas.get_tk_widget().pack()
-    # toolbar = NavigationToolbar2Tk(canvas,window)
-    # toolbar.update()
-    # canvas.get_tk_widget().pack()
 
-
-btc_price_history = fetch_btc_price_for_x_days(333)
+#settings
+btc_hist_val = 1500
+predict_days_val = 300
+btc_price_history = fetch_btc_price_for_x_days(btc_hist_val)
 stock_prices = convert_to_pandas(btc_price_history)
 
+#prophet forecast prep
 prophet_train_model = stock_prices[['date', 'close']].rename(columns={'date' : 'ds', 'close' : 'y'})
-#print(pd.head())
 stock_prices = stock_prices[['date', 'close']].set_index('date')
-stock_prices.plot(figsize = (15,5))
-
-
 model = Prophet()
 model.fit(prophet_train_model)
-future_df = model.make_future_dataframe(periods=60)
-print(future_df)
+future_df = model.make_future_dataframe(periods=predict_days_val)
 forecast = model.predict(future_df)
-#print(forecast)
-forecast_plt = forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']]
-model.plot(forecast_plt)
+forecast = forecast.drop(list(range(0, btc_hist_val+1)))
+forecast = forecast[['ds', 'yhat']].rename(columns={'ds' : 'date', 'yhat' : 'close'})
+forecast['date'] = forecast['date'].dt.strftime('%Y/%m/%d')
+forecast = forecast.set_index('date')
+
+#ploting
+x_spacing = int((btc_hist_val+predict_days_val)/10)
+print(stock_prices)
+print(forecast)
+plt.figure(figsize=(10, 5))
+plt.plot(stock_prices, color="green", label="BTC price")
+plt.plot(forecast, color="blue", label="BTC predicted price")
+plt.title("BTC price forecasting")
+plt.xlabel('Date')
+plt.ylabel('BTC/USD')
+plt.xticks(range(0, (len(stock_prices.index) + len(forecast.index) + 1), x_spacing))
+plt.legend()
 plt.show()
-###
-### create model
-###
-
-#reg = xgb.XGBRegressor(n_estimators=31, early_stopping_round=50)
-#reg.fit(stock_prices['date'], stock_prices['close'], eval_set=[(stock_prices['date'], stock_prices['close'])], verbose=True)
-#plot_btc_candle(stock_prices)
-
-
-# window = Tk()
-# window.title('Plotting in Tkinter')
-# window.state('zoomed')   #zooms the screen to maxm whenever executed
-# plot_button = Button(master = window, command = plot_btc_candle(stock_prices), height = 2, width = 10, text = "Plot")
-# plot_button.pack()
-# exit_button = Button(master = window, text="Quit", command=window.destroy)
-# exit_button.pack()
-# window.mainloop()
- 
