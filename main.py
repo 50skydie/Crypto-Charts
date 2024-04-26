@@ -111,6 +111,26 @@ def create_database(cursor):
             print(err)
             exit(1)
 
+
+def check_table_data(_user='root', _password='', _host='127.0.0.1', _database='test', table='snapshot'):
+    try:
+        cnx = mysql.connector.connect(user=_user, password=_password,
+                              host=_host,
+                              database=_database)
+        cursor = cnx.cursor()
+        query = f"SELECT EXISTS(SELECT 1 FROM {table} LIMIT 1)"
+        cursor.execute(query)
+        result = cursor.fetchone()
+        return not bool(result[0])
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
+        return False
+    finally:
+        if cnx.is_connected():
+            cursor.close()
+            cnx.close()
+
+
 def upload_database(_user='root', _password='', _host='127.0.0.1', _database='test'):
     cnx = mysql.connector.connect(user=_user, password=_password,
                               host=_host,
@@ -141,7 +161,7 @@ def upload_database(_user='root', _password='', _host='127.0.0.1', _database='te
     for table_name in TABLES:
         table_description = TABLES[table_name]
         try:
-            print("Creating table {}: ".format(table_name))
+            print("Creating table {}: ".format(table_name), end='')
             cursor.execute(table_description)  
         except mysql.connector.Error as err:
             if err.errno == errorcode.ER_TABLE_EXISTS_ERROR:
@@ -168,22 +188,29 @@ def upload_data_to_db(data, _user='root', _password='', _host='127.0.0.1', _data
                 "VALUES (%s, %s)")
 
     #commit hist data
-    for entry in convert_to_dict(data):
-        cursor.execute(add_hist_data, (entry['date'], entry['open'], entry['close'], entry['low'], entry['high']))
-    cnx.commit()
+    if check_table_data(table = f"snapshot{datetime.today().strftime('%Y%m%d')}"):
+        for entry in convert_to_dict(data):
+            cursor.execute(add_hist_data, (entry['date'], entry['open'], entry['close'], entry['low'], entry['high']))
+        cnx.commit()
+        print(f"snapshot{datetime.today().strftime('%Y%m%d')} collected!")
+    else:
+        print(f"snapshot{datetime.today().strftime('%Y%m%d')} already exists!")
 
     #commit pred data
-    stock, pred = make_forecast(convert_to_pandas(data))
-    pred = pred.to_dict()['close']
-    for entry_key in pred.keys():
-        cursor.execute(add_pred, (entry_key, pred[entry_key]))
-    cnx.commit()
+    if check_table_data(table = f"snapshot{datetime.today().strftime('%Y%m%d')}_prediction"):
+        stock, pred = make_forecast(convert_to_pandas(data))
+        pred = pred.to_dict()['close']
+        for entry_key in pred.keys():
+            cursor.execute(add_pred, (entry_key, pred[entry_key]))
+        cnx.commit()
+        print(f"snapshot{datetime.today().strftime('%Y%m%d')}_prediction collected!")
+    else:
+        print(f"snapshot{datetime.today().strftime('%Y%m%d')}_prediction already exists!")
 
     #close connection
     cursor.close()
     cnx.close()
-    print(f"snapshot{datetime.today().strftime('%Y%m%d')} collected!")
-
+    
 
 #wrapper for snapshot
 def collect_snapshot(btc_price_history):
@@ -203,7 +230,7 @@ while(menu):
     ### Menu ###
     1) Get data for today from API
     2) Save snapshot to DB
-    3) Load snapshot
+    3) Load and plot snapshot
     """)
     usr_in = input()
     match int(usr_in):
