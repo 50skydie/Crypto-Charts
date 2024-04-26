@@ -4,6 +4,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
 from prophet import Prophet
+import mysql.connector
+from mysql.connector import errorcode
 
 
 def fetch_btc_price_for_x_days(x):    
@@ -59,34 +61,157 @@ def plot_btc_candle(stock_prices):
     plt.show()
 
 
+#prophet forecast
+def make_forecast(stock_prices):
+    prophet_train_model = stock_prices[['date', 'close']].rename(columns={'date' : 'ds', 'close' : 'y'})
+    stock_prices = stock_prices[['date', 'close']].set_index('date')
+    model = Prophet()
+    model.fit(prophet_train_model)
+    future_df = model.make_future_dataframe(periods=predict_days_val)
+    forecast = model.predict(future_df)
+    forecast = forecast.drop(list(range(0, btc_hist_val+1)))
+    forecast = forecast[['ds', 'yhat']].rename(columns={'ds' : 'date', 'yhat' : 'close'})
+    forecast['date'] = forecast['date'].dt.strftime('%Y/%m/%d')
+    forecast = forecast.set_index('date')
+    return stock_prices, forecast
+
+#make forecast and plot
+def plot_with_forecast(stock_prices):
+    stock_prices, forecast = make_forecast(stock_prices)
+    #print(stock_prices)
+    #print(forecast)
+    plt.figure(figsize=(10, 5))
+    plt.plot(stock_prices, color="green", label="BTC price")
+    plt.plot(forecast, color="blue", label="BTC predicted price")
+    plt.title(f"BTC price forecasting {datetime.today().strftime('%Y-%m-%d')}")
+    plt.xlabel('Date')
+    plt.ylabel('BTC/USD')
+    plt.xticks(range(0, (len(stock_prices.index) + len(forecast.index) + 1), x_spacing))
+    plt.legend()
+    plt.show()
+
+
+def create_database(cursor):
+    try:
+        cursor.execute(
+            "CREATE DATABASE {} DEFAULT CHARACTER SET 'utf8'".format(DB_NAME))
+    except mysql.connector.Error as err:
+        print("Failed creating database: {}".format(err))
+        exit(1)
+
+    try:
+        cursor.execute("USE {}".format(DB_NAME))
+    except mysql.connector.Error as err:
+        print("Database {} does not exists.".format(DB_NAME))
+        if err.errno == errorcode.ER_BAD_DB_ERROR:
+            create_database(cursor)
+            print("Database {} created successfully.".format(DB_NAME))
+            cnx.database = DB_NAME
+        else:
+            print(err)
+            exit(1)
+
+def upload_database(_user='root', _password='', _host='127.0.0.1', _database='test'):
+    cnx = mysql.connector.connect(user=_user, password=_password,
+                              host=_host,
+                              database=_database)
+    cursor = cnx.cursor()
+
+    DB_NAME = "XD_Test"
+    TABLES = {}
+    TABLES['hist_data'] = (
+        f"CREATE TABLE `snapshot{datetime.today().strftime('%Y%m%d')}` ("
+        "  `id_no` int(11) NOT NULL AUTO_INCREMENT,"
+        "  `date` date NOT NULL,"
+        "  `open` FLOAT(11, 2) NOT NULL,"
+        "  `close` FLOAT(11, 2) NOT NULL,"
+        "  `low` FLOAT(11, 2) NOT NULL,"
+        "  `high` FLOAT(11, 2) NOT NULL,"
+        "  PRIMARY KEY (`id_no`)"
+        ") ENGINE=InnoDB")
+    TABLES['pred_data'] = (
+        f"CREATE TABLE `snapshot{datetime.today().strftime('%Y%m%d')}_prediction` ("
+        "  `id_no` int(11) NOT NULL AUTO_INCREMENT,"
+        "  `date` date NOT NULL,"
+        "  `prediction` FLOAT(11, 2) NOT NULL,"
+        "  PRIMARY KEY (`id_no`)"
+        ") ENGINE=InnoDB")
+
+    #run make DB
+    for table_name in TABLES:
+        table_description = TABLES[table_name]
+        try:
+            print("Creating table {}: ".format(table_name))
+            cursor.execute(table_description)  
+        except mysql.connector.Error as err:
+            if err.errno == errorcode.ER_TABLE_EXISTS_ERROR:
+                print("Table already exists.")
+            else:
+                print(err.msg)
+        else:
+            print("OK")
+    cursor.close()
+    cnx.close()
+
+def upload_data_to_db(data, _user='root', _password='', _host='127.0.0.1', _database='test'):
+    cnx = mysql.connector.connect(user=_user, password=_password,
+                              host=_host,
+                              database=_database)
+    cursor = cnx.cursor()
+
+    add_hist_data = (f"INSERT INTO snapshot{datetime.today().strftime('%Y%m%d')}"
+                "(date, open, close, low, high) "
+                "VALUES (%s, %s, %s, %s, %s)")
+
+    add_pred = (f"INSERT INTO snapshot{datetime.today().strftime('%Y%m%d')}_prediction"
+                "(date, prediction) "
+                "VALUES (%s, %s)")
+
+    #commit hist data
+    for entry in convert_to_dict(data):
+        cursor.execute(add_hist_data, (entry['date'], entry['open'], entry['close'], entry['low'], entry['high']))
+    cnx.commit()
+
+    #commit pred data
+    stock, pred = make_forecast(convert_to_pandas(data))
+    pred = pred.to_dict()['close']
+    for entry_key in pred.keys():
+        cursor.execute(add_pred, (entry_key, pred[entry_key]))
+    cnx.commit()
+
+    #close connection
+    cursor.close()
+    cnx.close()
+    print(f"snapshot{datetime.today().strftime('%Y%m%d')} collected!")
+
+
+#wrapper for snapshot
+def collect_snapshot(btc_price_history):
+    upload_database()
+    upload_data_to_db(btc_price_history)
+
+
 #settings
 btc_hist_val = 1500
 predict_days_val = 300
 btc_price_history = fetch_btc_price_for_x_days(btc_hist_val)
-stock_prices = convert_to_pandas(btc_price_history)
-
-#prophet forecast prep
-prophet_train_model = stock_prices[['date', 'close']].rename(columns={'date' : 'ds', 'close' : 'y'})
-stock_prices = stock_prices[['date', 'close']].set_index('date')
-model = Prophet()
-model.fit(prophet_train_model)
-future_df = model.make_future_dataframe(periods=predict_days_val)
-forecast = model.predict(future_df)
-forecast = forecast.drop(list(range(0, btc_hist_val+1)))
-forecast = forecast[['ds', 'yhat']].rename(columns={'ds' : 'date', 'yhat' : 'close'})
-forecast['date'] = forecast['date'].dt.strftime('%Y/%m/%d')
-forecast = forecast.set_index('date')
-
-#ploting
 x_spacing = int((btc_hist_val+predict_days_val)/10)
-print(stock_prices)
-print(forecast)
-plt.figure(figsize=(10, 5))
-plt.plot(stock_prices, color="green", label="BTC price")
-plt.plot(forecast, color="blue", label="BTC predicted price")
-plt.title("BTC price forecasting")
-plt.xlabel('Date')
-plt.ylabel('BTC/USD')
-plt.xticks(range(0, (len(stock_prices.index) + len(forecast.index) + 1), x_spacing))
-plt.legend()
-plt.show()
+menu = True
+
+while(menu):
+    print("""
+    ### Menu ###
+    1) Get data for today from API
+    2) Save snapshot to DB
+    3) Load snapshot
+    """)
+    usr_in = input()
+    match int(usr_in):
+        case 1:
+            plot_with_forecast(convert_to_pandas(btc_price_history))
+        case 2:
+            collect_snapshot(btc_price_history)
+        case 3:
+            pass
+        case _:
+            menu = False
