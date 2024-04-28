@@ -1,7 +1,10 @@
+#!/usr/bin/python3
+
 import requests
 import pandas as pd 
 import numpy as np
 import matplotlib.pyplot as plt
+import os
 from datetime import datetime
 from prophet import Prophet
 import mysql.connector
@@ -75,19 +78,65 @@ def make_forecast(stock_prices):
     forecast = forecast.set_index('date')
     return stock_prices, forecast
 
+
 #make forecast and plot
 def plot_with_forecast(stock_prices):
-    stock_prices, forecast = make_forecast(stock_prices)
-    #print(stock_prices)
-    #print(forecast)
-    plt.figure(figsize=(10, 5))
-    plt.plot(stock_prices, color="green", label="BTC price")
-    plt.plot(forecast, color="blue", label="BTC predicted price")
-    plt.title(f"BTC price forecasting {datetime.today().strftime('%Y-%m-%d')}")
-    plt.xlabel('Date')
-    plt.ylabel('BTC/USD')
+    stock_prices, forecast = make_forecast(convert_to_pandas(stock_prices))
+    fig_hist, ax = plt.subplots(figsize=(10, 5)) #fig_snap, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(stock_prices, color="green", label="BTC price")
+    ax.plot(forecast, color="blue", label="BTC predicted price")
+    ax.set_title(f"BTC price forecasting {datetime.today().strftime('%Y-%m-%d')}")
+    ax.set_xlabel('Date')
+    ax.set_ylabel('BTC/USD')
     plt.xticks(range(0, (len(stock_prices.index) + len(forecast.index) + 1), x_spacing))
-    plt.legend()
+    ax.legend()
+    plt.show()
+
+
+def get_values_from_snapshot():
+    tables = show_tables()
+    for i, table in enumerate(tables):
+        if "prediction" in table:
+            tables.pop(i)
+        else:
+            continue
+
+    if(tables):
+        for index, table in enumerate(tables):
+            print(f"{index}) {table}")
+    else:
+        print("There is no snapshots!")
+
+    print("choose snapshot to load")
+    usr_inpt = input()
+    if int(usr_inpt) >= len(tables):
+        print("No such snapshot under given index")
+    else:
+        hist_data = fetch_table_data(table = tables[int(usr_inpt)])
+        pred_data = fetch_table_data(table = f"{tables[int(usr_inpt)]}_prediction")
+        return hist_data, pred_data, tables[int(usr_inpt)]
+        
+
+def plot_from_snapshot():
+    hist_data, pred_data, snap_name = get_values_from_snapshot()
+    tmp_list = []
+    for data in hist_data:
+        tmp_list.append([data[1], data[3]])
+    hist_df = pd.DataFrame(tmp_list)
+    hist_df = hist_df.set_index(0)
+    tmp_list = []
+    for data in pred_data:
+        tmp_list.append([data[1], data[2]])
+    pred_df = pd.DataFrame(tmp_list)
+    pred_df = pred_df.set_index(0)
+    fig_snap, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(hist_df, color="green", label="BTC price")
+    ax.plot(pred_df, color="blue", label="BTC predicted price")
+    ax.set_title(f"BTC price forecasting from {snap_name}")
+    ax.set_xlabel('Date')
+    ax.set_ylabel('BTC/USD')
+    #ax.set_xticks(range(0, len(hist_df.index) + len(pred_df.index) + 1, x_spacing))
+    ax.legend()
     plt.show()
 
 
@@ -125,6 +174,49 @@ def check_table_data(_user='root', _password='', _host='127.0.0.1', _database='t
     except mysql.connector.Error as err:
         print(f"Error: {err}")
         return False
+    finally:
+        if cnx.is_connected():
+            cursor.close()
+            cnx.close()
+
+
+def show_tables(_user='root', _password='', _host='127.0.0.1', _database='test'):
+    try:
+        cnx = mysql.connector.connect(user=_user, password=_password,
+                              host=_host,
+                              database=_database)
+        cursor = cnx.cursor()
+        query = f"SHOW TABLES"
+        cursor.execute(query)
+        tables = cursor.fetchall()
+        table_names = [table[0] for table in tables]
+        return table_names
+
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
+        return False
+
+    finally:
+        if cnx.is_connected():
+            cursor.close()
+            cnx.close()
+
+    
+def fetch_table_data(_user='root', _password='', _host='127.0.0.1', _database='test', table='snapshot'):
+    try:
+        cnx = mysql.connector.connect(user=_user, password=_password,
+                              host=_host,
+                              database=_database)
+        cursor = cnx.cursor()
+        query = f"SELECT * FROM {table}"
+        cursor.execute(query)
+        rows = cursor.fetchall()
+        return rows
+
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
+        return False
+
     finally:
         if cnx.is_connected():
             cursor.close()
@@ -172,6 +264,7 @@ def upload_database(_user='root', _password='', _host='127.0.0.1', _database='te
             print("OK")
     cursor.close()
     cnx.close()
+
 
 def upload_data_to_db(data, _user='root', _password='', _host='127.0.0.1', _database='test'):
     cnx = mysql.connector.connect(user=_user, password=_password,
@@ -222,7 +315,7 @@ def collect_snapshot(btc_price_history):
 btc_hist_val = 1500
 predict_days_val = 300
 btc_price_history = fetch_btc_price_for_x_days(btc_hist_val)
-x_spacing = int((btc_hist_val+predict_days_val)/10)
+x_spacing = int((btc_hist_val+predict_days_val)/11)
 menu = True
 
 while(menu):
@@ -233,12 +326,14 @@ while(menu):
     3) Load and plot snapshot
     """)
     usr_in = input()
+    os.system('cls')
     match int(usr_in):
         case 1:
-            plot_with_forecast(convert_to_pandas(btc_price_history))
+            plot_with_forecast(btc_price_history)
         case 2:
             collect_snapshot(btc_price_history)
         case 3:
-            pass
+            plot_from_snapshot()
+            os.system('cls')
         case _:
             menu = False
