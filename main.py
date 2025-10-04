@@ -1,5 +1,4 @@
 #!/usr/bin/python3
-
 import requests
 import pandas as pd 
 import numpy as np
@@ -7,8 +6,6 @@ import matplotlib.pyplot as plt
 import os
 from datetime import datetime
 from prophet import Prophet
-import mysql.connector
-from mysql.connector import errorcode
 
 
 def fetch_btc_price_for_x_days(x):    
@@ -47,23 +44,6 @@ def return_start_end_date(btc_price_array):
             datetime.utcfromtimestamp(btc_price_array[-1]['time']).strftime('%Y-%m-%d')]
 
 
-def plot_btc_candle(stock_prices):
-    fig = plt.figure()
-    up_prices = stock_prices[stock_prices.close >= stock_prices.open] 
-    down_prices = stock_prices[stock_prices.close < stock_prices.open] 
-    plt.bar(up_prices.index, up_prices.close - up_prices.open, width=0.3, bottom=up_prices.open, color='green', label='Up Prices') 
-    plt.bar(up_prices.index, up_prices.high - up_prices.close, width=0.03, bottom=up_prices.close, color='green') 
-    plt.bar(up_prices.index, up_prices.low - up_prices.open, width=0.03, bottom=up_prices.open, color='green') 
-    plt.bar(down_prices.index, down_prices.close - down_prices.open, width=0.3, bottom=down_prices.open, color='red', label='Down Prices') 
-    plt.bar(down_prices.index, down_prices.high - down_prices.open, width=0.03, bottom=down_prices.open, color='red') 
-    plt.bar(down_prices.index, down_prices.low - down_prices.close, width=0.03, bottom=down_prices.close, color='red') 
-    plt.xticks(stock_prices.index, stock_prices['date'], rotation=30, ha='right')
-    plt.ylabel("USD", fontsize=16)
-    plt.xlabel("Date", fontsize=16)
-    plt.title(f"USD/BTC daily chart from {return_start_end_date(btc_price_history)[0]} to {return_start_end_date(btc_price_history)[1]}")
-    plt.show()
-
-
 #prophet forecast
 def make_forecast(stock_prices):
     prophet_train_model = stock_prices[['date', 'close']].rename(columns={'date' : 'ds', 'close' : 'y'})
@@ -92,219 +72,7 @@ def plot_with_forecast(stock_prices):
     ax.legend()
     plt.show()
 
-
-def get_values_from_snapshot():
-    tables = show_tables()
-    for i, table in enumerate(tables):
-        if "prediction" in table:
-            tables.pop(i)
-        else:
-            continue
-
-    if(tables):
-        for index, table in enumerate(tables):
-            print(f"{index}) {table}")
-    else:
-        print("There is no snapshots!")
-
-    print("choose snapshot to load")
-    usr_inpt = input()
-    if int(usr_inpt) >= len(tables):
-        print("No such snapshot under given index")
-    else:
-        hist_data = fetch_table_data(table = tables[int(usr_inpt)])
-        pred_data = fetch_table_data(table = f"{tables[int(usr_inpt)]}_prediction")
-        return hist_data, pred_data, tables[int(usr_inpt)]
         
-
-def plot_from_snapshot():
-    hist_data, pred_data, snap_name = get_values_from_snapshot()
-    tmp_list = []
-    for data in hist_data:
-        tmp_list.append([data[1], data[3]])
-    hist_df = pd.DataFrame(tmp_list)
-    hist_df = hist_df.set_index(0)
-    tmp_list = []
-    for data in pred_data:
-        tmp_list.append([data[1], data[2]])
-    pred_df = pd.DataFrame(tmp_list)
-    pred_df = pred_df.set_index(0)
-    fig_snap, ax = plt.subplots(figsize=(10, 5))
-    ax.plot(hist_df, color="green", label="BTC price")
-    ax.plot(pred_df, color="blue", label="BTC predicted price")
-    ax.set_title(f"BTC price forecasting from {snap_name}")
-    ax.set_xlabel('Date')
-    ax.set_ylabel('BTC/USD')
-    #ax.set_xticks(range(0, len(hist_df.index) + len(pred_df.index) + 1, x_spacing))
-    ax.legend()
-    plt.show()
-
-
-def create_database(cursor):
-    try:
-        cursor.execute(
-            "CREATE DATABASE {} DEFAULT CHARACTER SET 'utf8'".format(DB_NAME))
-    except mysql.connector.Error as err:
-        print("Failed creating database: {}".format(err))
-        exit(1)
-
-    try:
-        cursor.execute("USE {}".format(DB_NAME))
-    except mysql.connector.Error as err:
-        print("Database {} does not exists.".format(DB_NAME))
-        if err.errno == errorcode.ER_BAD_DB_ERROR:
-            create_database(cursor)
-            print("Database {} created successfully.".format(DB_NAME))
-            cnx.database = DB_NAME
-        else:
-            print(err)
-            exit(1)
-
-
-def check_table_data(_user='root', _password='', _host='127.0.0.1', _database='test', table='snapshot'):
-    try:
-        cnx = mysql.connector.connect(user=_user, password=_password,
-                              host=_host,
-                              database=_database)
-        cursor = cnx.cursor()
-        query = f"SELECT EXISTS(SELECT 1 FROM {table} LIMIT 1)"
-        cursor.execute(query)
-        result = cursor.fetchone()
-        return not bool(result[0])
-    except mysql.connector.Error as err:
-        print(f"Error: {err}")
-        return False
-    finally:
-        if cnx.is_connected():
-            cursor.close()
-            cnx.close()
-
-
-def show_tables(_user='root', _password='', _host='127.0.0.1', _database='test'):
-    try:
-        cnx = mysql.connector.connect(user=_user, password=_password,
-                              host=_host,
-                              database=_database)
-        cursor = cnx.cursor()
-        query = f"SHOW TABLES"
-        cursor.execute(query)
-        tables = cursor.fetchall()
-        table_names = [table[0] for table in tables]
-        return table_names
-
-    except mysql.connector.Error as err:
-        print(f"Error: {err}")
-        return False
-
-    finally:
-        if cnx.is_connected():
-            cursor.close()
-            cnx.close()
-
-    
-def fetch_table_data(_user='root', _password='', _host='127.0.0.1', _database='test', table='snapshot'):
-    try:
-        cnx = mysql.connector.connect(user=_user, password=_password,
-                              host=_host,
-                              database=_database)
-        cursor = cnx.cursor()
-        query = f"SELECT * FROM {table}"
-        cursor.execute(query)
-        rows = cursor.fetchall()
-        return rows
-
-    except mysql.connector.Error as err:
-        print(f"Error: {err}")
-        return False
-
-    finally:
-        if cnx.is_connected():
-            cursor.close()
-            cnx.close()
-
-
-def upload_database(_user='root', _password='', _host='127.0.0.1', _database='test'):
-    cnx = mysql.connector.connect(user=_user, password=_password,
-                              host=_host,
-                              database=_database)
-    cursor = cnx.cursor()
-
-    DB_NAME = "XD_Test"
-    TABLES = {}
-    TABLES['hist_data'] = (
-        f"CREATE TABLE `snapshot{datetime.today().strftime('%Y%m%d')}` ("
-        "  `id_no` int(11) NOT NULL AUTO_INCREMENT,"
-        "  `date` date NOT NULL,"
-        "  `open` FLOAT(11, 2) NOT NULL,"
-        "  `close` FLOAT(11, 2) NOT NULL,"
-        "  `low` FLOAT(11, 2) NOT NULL,"
-        "  `high` FLOAT(11, 2) NOT NULL,"
-        "  PRIMARY KEY (`id_no`)"
-        ") ENGINE=InnoDB")
-    TABLES['pred_data'] = (
-        f"CREATE TABLE `snapshot{datetime.today().strftime('%Y%m%d')}_prediction` ("
-        "  `id_no` int(11) NOT NULL AUTO_INCREMENT,"
-        "  `date` date NOT NULL,"
-        "  `prediction` FLOAT(11, 2) NOT NULL,"
-        "  PRIMARY KEY (`id_no`)"
-        ") ENGINE=InnoDB")
-
-    #run make DB
-    for table_name in TABLES:
-        table_description = TABLES[table_name]
-        try:
-            print("Creating table {}: ".format(table_name), end='')
-            cursor.execute(table_description)  
-        except mysql.connector.Error as err:
-            if err.errno == errorcode.ER_TABLE_EXISTS_ERROR:
-                print("Table already exists.")
-            else:
-                print(err.msg)
-        else:
-            print("OK")
-    cursor.close()
-    cnx.close()
-
-
-def upload_data_to_db(data, _user='root', _password='', _host='127.0.0.1', _database='test'):
-    cnx = mysql.connector.connect(user=_user, password=_password,
-                              host=_host,
-                              database=_database)
-    cursor = cnx.cursor()
-
-    add_hist_data = (f"INSERT INTO snapshot{datetime.today().strftime('%Y%m%d')}"
-                "(date, open, close, low, high) "
-                "VALUES (%s, %s, %s, %s, %s)")
-
-    add_pred = (f"INSERT INTO snapshot{datetime.today().strftime('%Y%m%d')}_prediction"
-                "(date, prediction) "
-                "VALUES (%s, %s)")
-
-    #commit hist data
-    if check_table_data(table = f"snapshot{datetime.today().strftime('%Y%m%d')}"):
-        for entry in convert_to_dict(data):
-            cursor.execute(add_hist_data, (entry['date'], entry['open'], entry['close'], entry['low'], entry['high']))
-        cnx.commit()
-        print(f"snapshot{datetime.today().strftime('%Y%m%d')} collected!")
-    else:
-        print(f"snapshot{datetime.today().strftime('%Y%m%d')} already exists!")
-
-    #commit pred data
-    if check_table_data(table = f"snapshot{datetime.today().strftime('%Y%m%d')}_prediction"):
-        stock, pred = make_forecast(convert_to_pandas(data))
-        pred = pred.to_dict()['close']
-        for entry_key in pred.keys():
-            cursor.execute(add_pred, (entry_key, pred[entry_key]))
-        cnx.commit()
-        print(f"snapshot{datetime.today().strftime('%Y%m%d')}_prediction collected!")
-    else:
-        print(f"snapshot{datetime.today().strftime('%Y%m%d')}_prediction already exists!")
-
-    #close connection
-    cursor.close()
-    cnx.close()
-    
-
 #wrapper for snapshot
 def collect_snapshot(btc_price_history):
     upload_database()
@@ -314,26 +82,19 @@ def collect_snapshot(btc_price_history):
 #settings
 btc_hist_val = 1500
 predict_days_val = 300
-btc_price_history = fetch_btc_price_for_x_days(btc_hist_val)
 x_spacing = int((btc_hist_val+predict_days_val)/11)
 menu = True
+
 
 while(menu):
     print("""
     ### Menu ###
     1) Get data for today from API
-    2) Save snapshot to DB
-    3) Load and plot snapshot
     """)
     usr_in = input()
     os.system('cls')
     match int(usr_in):
         case 1:
-            plot_with_forecast(btc_price_history)
-        case 2:
-            collect_snapshot(btc_price_history)
-        case 3:
-            plot_from_snapshot()
-            os.system('cls')
+            plot_with_forecast(fetch_btc_price_for_x_days(btc_hist_val))
         case _:
             menu = False
