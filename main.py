@@ -45,7 +45,7 @@ def return_start_end_date(btc_price_array):
 
 
 #prophet forecast
-def make_forecast(stock_prices):
+def make_forecast(stock_prices, predict_days_val):
     prophet_train_model = stock_prices[['date', 'close']].rename(columns={'date' : 'ds', 'close' : 'y'})
     stock_prices = stock_prices[['date', 'close']].set_index('date')
     model = Prophet()
@@ -60,8 +60,8 @@ def make_forecast(stock_prices):
 
 
 #make forecast and plot
-def plot_with_forecast(stock_prices):
-    stock_prices, forecast = make_forecast(convert_to_pandas(stock_prices))
+def plot_with_forecast(stock_prices, predict_days_val):
+    stock_prices, forecast = make_forecast(convert_to_pandas(stock_prices), predict_days_val)
     fig_hist, ax = plt.subplots(figsize=(10, 5)) #fig_snap, ax = plt.subplots(figsize=(10, 5))
     ax.plot(stock_prices, color="green", label="BTC price")
     ax.plot(forecast, color="blue", label="BTC predicted price")
@@ -95,6 +95,6 @@ while(menu):
     os.system('cls')
     match int(usr_in):
         case 1:
-            plot_with_forecast(fetch_btc_price_for_x_days(btc_hist_val))
+            plot_with_forecast(fetch_btc_price_for_x_days(btc_hist_val), predict_days_val)
         case _:
             menu = False
