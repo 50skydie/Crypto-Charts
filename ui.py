@@ -14,7 +14,7 @@ def on_calculate():
 
     if not days_before or not prediction_days:
         warning_label.config(
-            text="⚠️ Both fields are required!", foreground="red"
+            text="Both fields are required!", foreground="red"
         )
         return
 
@@ -25,7 +25,7 @@ def on_calculate():
         prediction_days_val = int(prediction_days)
     except ValueError:
         warning_label.config(
-            text="⚠️ Please enter valid numbers only!", foreground="red"
+            text="Please enter valid numbers only!", foreground="red"
         )
         return
 
@@ -53,7 +53,7 @@ def on_close():
 
 # Main UI setup
 root = tk.Tk()
-root.title("Prediction Dashboard")
+root.title("BTC Price Forecasting")
 root.geometry("1200x600")
 root.configure(bg="#f0f0f0")
 root.protocol("WM_DELETE_WINDOW", on_close)
@@ -84,4 +84,6 @@ warning_label.pack(pady=(10, 10))
 btn_calculate = ttk.Button(frame_right, text="Calculate", command=on_calculate)
 btn_calculate.pack(pady=(20, 10))
 
-root.mainloop()
+
+if __name__ == "__main__":
+    root.mainloop()
